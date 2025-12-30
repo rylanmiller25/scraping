@@ -1,10 +1,15 @@
 # Summary
 
-This markdown file includes instructions and guidelines for a monthly comprehensive scraping project of all startups founded since 2024, which we source from PitchBook. Taking the websites for each of these startups, this project involves scraping the text from the homepages of these websites at the beginning of each month. The eventual goal is to create a firm-month panel measuring changes in website text, firm-level entries and exits, and name changes. Since we will be pulling from PitchBook all startups founded since 2024 each month, the scraping will encapsulate both startups existing in that sample from the beginning as well as startups founded after the scraping project has begun.
+This markdown file includes instructions and guidelines for a monthly comprehensive scraping project of all startups founded since January 2026, which we source from PitchBook. Taking the websites for each of these startups, this project involves scraping the text from the homepages of these websites at the beginning of each month. The eventual goal is to create a firm-month panel measuring changes in website text, firm-level entries and exits, and name changes. Since each month we will be pulling from PitchBook all startups founded since January 2026, the scraping will encapsulate both startups existing in that sample from the beginning as well as startups founded after the scraping project has begun.
 
-# Formatting
+# Formatting and Final Scraping Output 
 
-The scraper employed here should extract all of the text from each given website domain. I should be able to give the scraper a list of website domains, and the scraper should be able to take each of those, scrape the raw HTML from the homepage and up to 9 additional first-level links (same domain), and then store the combined visible text (deleting the HTML after storing the text) in a dataframe where a column exists for the company called 'companyid', for the domain called 'website', for the year called 'year', for the month called 'month', for the text called 'text', and an indicator for failures called 'failure'. The final output should be saved as a Parquet file.
+The scraper employed here should extract all of the text from each given website domain. I should be able to give the scraper a list of website domains, and the scraper should be able to take each of those, scrape the raw HTML from the homepage and up to 9 additional first-level links (same domain), and then store the combined visible text (deleting the HTML after storing the text) in a dataframe where a column exists for the company ID called 'companyid', for the company name called 'company', for the domain called 'website', for the year called 'year', for the month called 'month', for the text called 'text', and an indicator for failures called 'failure'. The final output should be saved as a Parquet file.
+
+**Text Deduplication**: To save space and highlight changes, the scraper should compare the scraped text for month `t` against the text from month `t-1` (if available).
+- If the scraped text for a company is **identical** to the text scraped in the previous month, the `text` column for the current month should contain a single dash `'-'`.
+- If the text has changed, or if there is no record for the previous month (e.g., new entry), store the full scraped text.
+- This requires the scraper to accept an optional input for the "previous month's data file" to perform the comparison.
 
 # Guidelines
 
@@ -24,7 +29,7 @@ The scraper employed here should extract all of the text from each given website
 - **Etiquette & Performance**:
     - Robots.txt: The scraper must check and respect the `robots.txt` file for each domain before attempting to scrape.
     - Speed: The scraping process should be deliberate and not overly aggressive. While concurrency can be used since targets are distinct domains, avoiding high-volume bursts is preferred to prevent network issues or blocking. A limit of 5 concurrent browsers is recommended for local execution on a standard machine.
-    - **Timing**: Implement a randomized delay of 2 to 5 seconds between navigation actions on the same domain (i.e., between the homepage and subsequent subpages). This variation makes the traffic pattern look less robotic and helps avoid rate limits.
+    - Timing: Implement a randomized delay of 2 to 5 seconds between navigation actions on the same domain (i.e., between the homepage and subsequent subpages). This variation makes the traffic pattern look less robotic and helps avoid rate limits.
     - Retries: Implement a retry mechanism (e.g., 3 attempts) with backoff for transient network errors.
 
 - **Error Handling**: 
@@ -36,6 +41,7 @@ The scraper employed here should extract all of the text from each given website
 # Input Data
 
 - The input to the scraper will be a CSV file containing at least the following columns:
+    - `company`: The company's unique name in the given month and year, stored as a string.
     - `companyid`: A unique identifier for the company.
     - `website`: The domain of the company's homepage. The websites in this file will be formatted **without any prefixes** (e.g., `example.com`). They will not include `www.`, `http://`, or `https://`.
 - **Context**: This file represents a cross-section of US startups founded since January 2026 (the scraper will begin running in February 2026).
