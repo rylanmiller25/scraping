@@ -4,7 +4,7 @@ This markdown file includes instructions and guidelines for a monthly comprehens
 
 # Formatting
 
-The scraper employed here should extract all of the text (and only the text, not the raw HTML) from each given website domain given. I should be able to give the scraper a list of website domains, and the scraper should be able to take each of those, scrape the text alone from each website, and then store that text in a dataframe where a column exists for the company called 'companyid', for the domain called 'website', for the year called 'year', for the month called 'month', for the text called 'text', and an indicator for failures called 'failure'. The final output should be saved as a Parquet file.
+The scraper employed here should extract all of the text from each given website domain. I should be able to give the scraper a list of website domains, and the scraper should be able to take each of those, scrape the raw HTML from the homepage and up to 9 additional first-level links (same domain), and then store the combined visible text (deleting the HTML after storing the text) in a dataframe where a column exists for the company called 'companyid', for the domain called 'website', for the year called 'year', for the month called 'month', for the text called 'text', and an indicator for failures called 'failure'. The final output should be saved as a Parquet file.
 
 # Guidelines
 
@@ -12,9 +12,14 @@ The scraper employed here should extract all of the text (and only the text, not
     - The scraper must be written in Python.
     - It must use Playwright to handle dynamic content (Single Page Applications, React/Next.js sites) and ensure all visible text is captured.
 
-- **Content Extraction**:
-    - The goal is to capture any text whatsoever that would appear when you go to a website.
-    - The scraper should render the full homepage and extract all visible text content, ignoring HTML tags, scripts, and styles.
+- **Content Extraction & Crawling**:
+    - The goal is to capture all visible text from the website.
+    - **Scope**: The scraper must visit the homepage of each startup. It should then identify and visit up to **9 other first-level links** (links that point to pages within the same domain, e.g., "About Us", "Team", "Product") found on the homepage.
+    - **Total Pages**: A maximum of 10 pages per company (1 homepage + 9 subpages) should be scraped.
+    - **Extraction**: For each visited page, render the full HTML, extract all visible text, and then discard the HTML. The text from all pages should be aggregated for that company.
+    - **Filtering**:
+        - Exclude pages that are empty, contain only boilerplate (e.g., just a nav bar), represent errors (404s), or are non-English.
+        - Ensure the extracted text is cleaned of HTML tags, scripts, and styles.
 
 - **Etiquette & Performance**:
     - Robots.txt: The scraper must check and respect the `robots.txt` file for each domain before attempting to scrape.
@@ -31,11 +36,12 @@ The scraper employed here should extract all of the text (and only the text, not
 
 - The input to the scraper will be a CSV file containing at least the following columns:
     - `companyid`: A unique identifier for the company.
-    - `website`: The full URL or domain of the company's homepage. The websites in this file will be formatted with the `www.` prefix (e.g., `www.example.com`) but will *not* include the protocol (`http://` or `https://`).
+    - `website`: The domain of the company's homepage. The websites in this file will be formatted **without any prefixes** (e.g., `example.com`). They will not include `www.`, `http://`, or `https://`.
+- **Context**: This file represents a cross-section of US startups founded since January 2026 (the scraper will begin running in February 2026).
 
 # Implementation Details
 
-- **URL Normalization**: Since input URLs lack a protocol, the scrape must prepend `https://` to the `website` string before attempting navigation (e.g., `www.example.com` becomes `https://www.example.com`).
+- **URL Normalization**: Since input URLs lack any prefixes, the scraper **must prepend the appropriate protocols and subdomains** (e.g., `https://www.`) to the `website` string before attempting navigation (e.g., `example.com` becomes `https://www.example.com`). The scraper handles potential redirects or protocol fallbacks as needed.
 - **Date Handling**: The `year` and `month` columns in the output dataframe should be populated based on the current system date when the script is run. This ensures the "firm-month" panel structure tracks when the data was actually observed.
 - **Timeouts**: To prevent the scraper from hanging on broken or slow websites, a strict timeout of 30 seconds should be enforced for each page load. If a page fails to load within this window, it should be recorded as a failure.
 
