@@ -1,6 +1,6 @@
 # Summary
 
-This markdown file includes instructions and guidelines for a monthly comprehensive scraping project of all startups founded since January 2026, which we source from PitchBook. Taking the websites for each of these startups, this project involves scraping the text from the homepages of these websites at the beginning of each month. The eventual goal is to create a firm-month panel measuring changes in website text, firm-level entries and exits, and name changes. Since each month we will be pulling from PitchBook all startups founded since January 2026, the scraping will encapsulate both startups existing in that sample from the beginning as well as startups founded after the scraping project has begun.
+This markdown file includes instructions and guidelines for a monthly comprehensive scraping project of all startups founded since January 2026, which we source from PitchBook. Taking the websites for each of these startups, this project involves scraping the text from the homepages of these websites at the beginning of each month. The eventual goal is to create a firm-month panel measuring changes in website text, firm-level entries and exits, and name changes. Since each month we will be pulling from PitchBook all startups founded since January 2026, the scraping will encapsulate both startups existing in that sample from the beginning as well as startups founded after the scraping project has begun. Additionally, this project will utilize Natural Language Processing (NLP) to quantify the similarity of a firm's website text from month to month, providing a robust measure of change over time.
 
 # Formatting and Final Scraping Output 
 
@@ -67,3 +67,15 @@ The scraper employed here should extract all of the text from each given website
     - `aiohttp` or similar: May be needed for efficient asynchronous handling if not fully covered by Playwright's native async capabilities.
 - The environment must have the Playwright browsers installed (run `playwright install`).
 - Despite all of these libraries, prioritize feasibility and operability over fanciness. I want this scraper to work correctly. Don't do too much such that it doesn't work.
+
+# Natural Language Processing
+
+- **Goal**: To measure the semantic similarity of a startup's website text between the current month (`t`) and the prior month (`t-1`), creating a metric for website change.
+- **Model**: The project will use the **BERT** embeddings model `intfloat/e5-base-v2` (available on Hugging Face).
+- **Metric**: The primary metric will be the **Cosine Similarity** between the embedding of the current month's text and the embedding of the previous month's text.
+- **Logic**:
+    1.  **Generate Embedding**: For each company, generate a vector embedding of the scraped text using `intfloat/e5-base-v2`.
+    2.  **Comparison**: Calculate the cosine similarity score between the embedding for month `t` and the embedding for month `t-1`.
+    3.  **Dash Handling**: The process must be robust to the deduplication logic (where `'-'` represents no change).
+        - If the text for month `t` is a dash `'-'`, the similarity score is automatically **1.0** (perfect similarity).
+        - If the text for month `t` is different (i.e., not a dash), compare it against the **Reference State** (the last valid text) to compute the actual similarity score.
