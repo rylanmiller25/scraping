@@ -24,6 +24,7 @@ The scraper employed here should extract all of the text from each given website
 - **Etiquette & Performance**:
     - Robots.txt: The scraper must check and respect the `robots.txt` file for each domain before attempting to scrape.
     - Speed: The scraping process should be deliberate and not overly aggressive. While concurrency can be used since targets are distinct domains, avoiding high-volume bursts is preferred to prevent network issues or blocking. A limit of 5 concurrent browsers is recommended for local execution on a standard machine.
+    - **Timing**: Implement a randomized delay of 2 to 5 seconds between navigation actions on the same domain (i.e., between the homepage and subsequent subpages). This variation makes the traffic pattern look less robotic and helps avoid rate limits.
     - Retries: Implement a retry mechanism (e.g., 3 attempts) with backoff for transient network errors.
 
 - **Error Handling**: 
