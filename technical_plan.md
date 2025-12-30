@@ -6,10 +6,16 @@ This markdown file includes instructions and guidelines for a monthly comprehens
 
 The scraper employed here should extract all of the text from each given website domain. I should be able to give the scraper a list of website domains, and the scraper should be able to take each of those, scrape the raw HTML from the homepage and up to 9 additional first-level links (same domain), and then store the combined visible text (deleting the HTML after storing the text) in a dataframe where a column exists for the company ID called 'companyid', for the company name called 'company', for the domain called 'website', for the year called 'year', for the month called 'month', for the text called 'text', and an indicator for failures called 'failure'. The final output should be saved as a Parquet file.
 
-**Text Deduplication**: To save space and highlight changes, the scraper should compare the scraped text for month `t` against the text from month `t-1` (if available).
-- If the scraped text for a company is **identical** to the text scraped in the previous month, the `text` column for the current month should contain a single dash `'-'`.
-- If the text has changed, or if there is no record for the previous month (e.g., new entry), store the full scraped text.
-- This requires the scraper to accept an optional input for the "previous month's data file" to perform the comparison.
+**Text Deduplication & State Management**: 
+- **Goal**: To save space, if the text for a company has not changed since the last *valid* text entry, store a single dash `'-'`.
+- **Mechanism**: The scraper must maintain a **"Reference State"** (e.g., a local Parquet file `latest_state.parquet`) that stores the *last seen full text* for every company.
+- **Logic**:
+    1. Scrape the current text for a company (`current_text`).
+    2. Look up the company's text in the **Reference State** file (`ref_text`).
+    3. **Comparison**:
+        - If `current_text == ref_text`: Store `'-'` in the *monthly output file*. Do *not* update the Reference State.
+        - If `current_text != ref_text` (or if company is new): Store `current_text` in the *monthly output file*. **Update** the Reference State with this new `current_text`.
+- **Outcome**: This ensures that even if months `t`, `t+1`, and `t+2` are all dashes, month `t+3` is still compared against the text from month `t-1` (the last time it changed), satisfying the requirement to compare against the last known actual text.
 
 # Guidelines
 
