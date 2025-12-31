@@ -21,16 +21,16 @@ The scraper employed here should extract all of the text from each given website
 
 - **Language & Tooling**: 
     - The scraper must be written in Python.
-    - It must use Playwright to handle dynamic content (Single Page Applications, React/Next.js sites) and ensure all visible text is captured.
+    - It must use **Crawl4AI** (which utilizes Playwright under the hood) as the primary scraping library. Crawl4AI is chosen for its ability to produce clean, LLM-ready markdown/text and handle dynamic content efficiently.
 
 - **Content Extraction & Crawling**:
-    - The goal is to capture all visible text from the website.
+    - The goal is to capture all visible text from the website in a clean format.
     - **Scope**: The scraper must visit the homepage of each startup. It should then identify and visit up to **9 other first-level links** (links that point to pages within the same domain, e.g., "About Us", "Team", "Product") found on the homepage.
     - **Total Pages**: A maximum of 10 pages per company (1 homepage + 9 subpages) should be scraped.
-    - **Extraction**: For each visited page, render the full HTML, extract all visible text, and then discard the HTML. The text from all pages should be aggregated for that company.
+    - **Extraction**: For each visited page, use Crawl4AI to extract the **cleaned text or markdown**. This eliminates the need for manual boilerplate removal (nav bars, footers) as Crawl4AI handles this optimization. The text from all pages should be aggregated for that company.
     - **Filtering**:
-        - Exclude pages that are empty, contain only boilerplate (e.g., just a nav bar), represent errors (404s), or are non-English.
-        - Ensure the extracted text is cleaned of HTML tags, scripts, and styles.
+        - Exclude pages that are empty, represent errors (404s), or are non-English.
+        - Ensure the extracted text is free of HTML tags (Crawl4AI handles this by default).
 
 - **Etiquette & Performance**:
     - Robots.txt: The scraper must check and respect the `robots.txt` file for each domain before attempting to scrape.
@@ -61,10 +61,11 @@ The scraper employed here should extract all of the text from each given website
 # Environment Setup
 
 - The project requires the following Python libraries:
-    - `playwright`: For browser automation and rendering dynamic content.
+    - `crawl4ai`: The primary library for scraping and cleaning web content.
+    - `playwright`: Required by Crawl4AI for browser automation.
     - `pandas`: For data manipulation and creating the output dataframe.
     - `pyarrow` (or `fastparquet`): For saving the output dataframe as a Parquet file.
-    - `aiohttp` or similar: May be needed for efficient asynchronous handling if not fully covered by Playwright's native async capabilities.
+    - `aiohttp`: May be needed for efficient asynchronous handling.
 - The environment must have the Playwright browsers installed (run `playwright install`).
 - Despite all of these libraries, prioritize feasibility and operability over fanciness. I want this scraper to work correctly. Don't do too much such that it doesn't work.
 
