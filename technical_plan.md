@@ -54,7 +54,14 @@ The scraper employed here should extract all of the text from each given website
 
 # Implementation Details
 
-- **URL Normalization**: Since input URLs lack any prefixes, the scraper **must prepend the appropriate protocols and subdomains** (e.g., `https://www.`) to the `website` string before attempting navigation (e.g., `example.com` becomes `https://www.example.com`). The scraper handles potential redirects or protocol fallbacks as needed.
+- **URL Normalization & Smart Fallback**: Since input URLs lack prefixes, the scraper must attempt to find the correct accessible URL by trying a prioritized list of prefixes.
+    - **Logic**: For a given domain (e.g., `example.com`), the scraper should attempt to connect in the following order:
+        1. `https://www.example.com`
+        2. `https://example.com`
+        3. `http://www.example.com`
+        4. `http://example.com`
+    - **Success Condition**: As soon as one prefix returns a valid response (status 200 OK), the scraper should proceed with that URL and skip the remaining prefixes for that domain.
+    - **Failure Condition**: If all 4 variations fail (or time out), record the attempt as a failure.
 - **Date Handling**: The `year` and `month` columns in the output dataframe should be populated based on the current system date when the script is run. This ensures the "firm-month" panel structure tracks when the data was actually observed.
 - **Timeouts**: To prevent the scraper from hanging on broken or slow websites, a strict timeout of 30 seconds should be enforced for each page load. If a page fails to load within this window, it should be recorded as a failure.
 
