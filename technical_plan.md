@@ -41,7 +41,11 @@ The scraper employed here should extract all of the text from each given website
         - Ensure the extracted text is free of HTML tags (Crawl4AI handles this by default).
 
 - **Etiquette & Performance**:
-    - Robots.txt: The scraper must check and respect the `robots.txt` file for each domain before attempting to scrape.
+    - **Robots.txt Policy**:
+        - **User Agent**: The scraper should use a standard browser User-Agent string (e.g., Chrome) to mimic a real user visiting the site.
+        - **Compliance**: Check `robots.txt` for the target domain.
+            - If the **homepage** is disallowed: Abort scraping for this company and mark `failure_reason` as `robots_disallowed`.
+            - If a **subpage** is disallowed: Skip that specific link but continue scraping allowed pages.
     - Speed: The scraping process should be deliberate and not overly aggressive. While concurrency can be used since targets are distinct domains, avoiding high-volume bursts is preferred to prevent network issues or blocking. A limit of 5 concurrent browsers is recommended for local execution on a standard machine.
     - Timing: Implement a randomized delay of 2 to 5 seconds between navigation actions on the same domain (i.e., between the homepage and subsequent subpages). This variation makes the traffic pattern look less robotic and helps avoid rate limits.
     - Retries: Implement a retry mechanism (e.g., 3 attempts) with backoff for transient network errors.
