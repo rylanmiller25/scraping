@@ -136,11 +136,13 @@ The project should produce **two separate output files** for each run to optimiz
 # Natural Language Processing
 
 - **Goal**: To measure the semantic similarity of a startup's website text between the current month (`t`) and the prior month (`t-1`), creating a metric for website change.
-- **Model**: The project will use the **BERT** embeddings model `intfloat/e5-base-v2` (available on Hugging Face).
+- **Model**: The project will use the **Jina Embeddings** model `jinaai/jina-embeddings-v2-base-en` (available on Hugging Face).
+    - **Reasoning**: This model supports a long context window of **8,192 tokens** (approx. 6,000 words), which allows it to embed the entire aggregated website content in a single pass without complex chunking.
 - **Metric**: The primary metric will be the **Cosine Similarity** between the embedding of the current month's text and the embedding of the previous month's text.
 - **Logic**:
-    1.  **Generate Embedding**: For each company, generate a vector embedding of the scraped text using `intfloat/e5-base-v2`.
-    2.  **Comparison**: Calculate the cosine similarity score between the embedding for month `t` and the embedding for month `t-1`.
-    3.  **Dash Handling**: The process must be robust to the deduplication logic (where `'-'` represents no change).
+    1.  **Token Limit & Truncation**: Before embedding, check the token length of the aggregated text. If it exceeds **8,192 tokens**, **deterministically truncate** the text to the first 8,192 tokens. This preserves the homepage and top subpages (since scraping order is homepage-first).
+    2.  **Generate Embedding**: For each company, generate a vector embedding of the (potentially truncated) text using `jinaai/jina-embeddings-v2-base-en`.
+    3.  **Comparison**: Calculate the cosine similarity score between the embedding for month `t` and the embedding for month `t-1`.
+    4.  **Dash Handling**: The process must be robust to the deduplication logic (where `'-'` represents no change).
         - If the text for month `t` is a dash `'-'`, the similarity score is automatically **1.0** (perfect similarity).
         - If the text for month `t` is different (i.e., not a dash), compare it against the **Reference State** (the last valid text) to compute the actual similarity score.
