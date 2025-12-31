@@ -87,6 +87,21 @@ The scraper employed here should extract all of the text from each given website
     - **Failure Condition**: If all 4 variations fail (or time out), record the attempt as a failure.
 - **Date Handling**: The `year` and `month` columns in the output dataframe should be populated based on the current system date when the script is run. This ensures the "firm-month" panel structure tracks when the data was actually observed.
 - **Timeouts**: To prevent the scraper from hanging on broken or slow websites, a strict timeout of 30 seconds should be enforced for each page load. If a page fails to load within this window, it should be recorded as a failure.
+- **Execution & Concurrency Strategy**:
+    - **Mode**: The scraper must use Python's `asyncio` for asynchronous execution.
+    - **Sorting**: Process companies in deterministic order (sorted by `companyid`).
+    - **Concurrency Control**:
+        - **Global**: Max 5 concurrent companies (browsers) active at once.
+        - **Per-Domain**: Strictly **1 page at a time** (sequential scraping of homepage -> subpages). Do *not* scrape subpages in parallel.
+    - **Reproducibility**: Set a fixed seed (e.g., `42`) for the random number generator to ensure delay patterns are reproducible for debugging.
+- **Resumability & Checkpointing**:
+    - The script should support stopping and restarting without losing progress.
+    - **Logic**:
+        1. On startup, check if the output file (or a checkpoint file) exists.
+        2. Read the list of `companyid`s already successfully processed.
+        3. Filter the input CSV to exclude these IDs.
+        4. Resume scraping only the remaining companies.
+    - **Write Strategy**: Write results incrementally (e.g., append to Parquet or write batch files) to ensure data is saved even if the script crashes.
 
 # Environment Setup
 
