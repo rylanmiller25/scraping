@@ -35,6 +35,7 @@ The scraper employed here should extract all of the text from each given website
         1.  **Lowercasing**: Convert all text to lowercase.
         2.  **Whitespace Collapsing**: Replace all sequences of whitespace (spaces, tabs, newlines) with a single space.
         3.  **Trimming**: Remove leading and trailing whitespace.
+    - **Sanity Limit**: To prevent memory issues with outlier websites, enforce a hard limit of **500,000 characters** per company. If the aggregated text exceeds this limit, truncate it to the first 500,000 characters.
     - **Filtering**:
         - Exclude pages that are empty, represent errors (404s), or are non-English.
         - Ensure the extracted text is free of HTML tags (Crawl4AI handles this by default).
