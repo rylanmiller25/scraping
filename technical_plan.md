@@ -4,7 +4,26 @@ This markdown file includes instructions and guidelines for a monthly comprehens
 
 # Formatting and Final Scraping Output 
 
-The scraper employed here should extract all of the text from each given website domain. I should be able to give the scraper a list of website domains, and the scraper should be able to take each of those, scrape the raw HTML from the homepage and up to 9 additional first-level links (same domain), and then store the combined visible text (deleting the HTML after storing the text) in a dataframe where a column exists for the company ID called 'companyid', for the company name called 'company', for the domain called 'website', for the year called 'year', for the month called 'month', for the text called 'text', an indicator for failures called 'failure', and a specific reason for failure called 'failure_reason'. The final output should be saved as a Parquet file.
+The project should produce **two separate output files** for each run to optimize storage and analysis:
+
+1.  **Text Archive (Heavy Storage)**:
+    -   **Format**: Parquet (`text_YYYY_MM.parquet`).
+    -   **Content**: `companyid`, `year`, `month`, and the full `text`.
+    -   **Purpose**: Long-term storage of the raw/cleaned text for NLP or auditing.
+
+2.  **Analysis Panel (Light Analysis)**:
+    -   **Format**: Stata (`MM_YYYY_pb.dta`).
+    -   **Content**:
+        -   `companyid`: Unique identifier.
+        -   `company`: Company name.
+        -   `website`: Domain.
+        -   `year`, `month`: Time of scraping.
+        -   `failure`: Binary indicator (0/1).
+        -   `failure_reason`: Reason code (e.g., `robots_disallowed`).
+        -   `similarity_score`: Cosine similarity to previous month (1.0 = no change).
+        -   `has_change`: Binary flag (1 if text changed, 0 if same).
+        -   `num_pages_scraped`: Count of pages successfully scraped (1-10).
+        -   `text_length`: Total number of characters in the aggregated text.
 
 **Text Deduplication & State Management**: 
 - **Goal**: To save space, if the text for a company has not changed since the last *valid* text entry, store a single dash `'-'`.
