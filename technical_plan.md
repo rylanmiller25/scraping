@@ -4,7 +4,7 @@ This markdown file includes instructions and guidelines for a monthly comprehens
 
 # Formatting and Final Scraping Output 
 
-The scraper employed here should extract all of the text from each given website domain. I should be able to give the scraper a list of website domains, and the scraper should be able to take each of those, scrape the raw HTML from the homepage and up to 9 additional first-level links (same domain), and then store the combined visible text (deleting the HTML after storing the text) in a dataframe where a column exists for the company ID called 'companyid', for the company name called 'company', for the domain called 'website', for the year called 'year', for the month called 'month', for the text called 'text', and an indicator for failures called 'failure'. The final output should be saved as a Parquet file.
+The scraper employed here should extract all of the text from each given website domain. I should be able to give the scraper a list of website domains, and the scraper should be able to take each of those, scrape the raw HTML from the homepage and up to 9 additional first-level links (same domain), and then store the combined visible text (deleting the HTML after storing the text) in a dataframe where a column exists for the company ID called 'companyid', for the company name called 'company', for the domain called 'website', for the year called 'year', for the month called 'month', for the text called 'text', an indicator for failures called 'failure', and a specific reason for failure called 'failure_reason'. The final output should be saved as a Parquet file.
 
 **Text Deduplication & State Management**: 
 - **Goal**: To save space, if the text for a company has not changed since the last *valid* text entry, store a single dash `'-'`.
@@ -51,6 +51,17 @@ The scraper employed here should extract all of the text from each given website
     - If a request fails (e.g., connection timeout, DNS error, non-200 status code), the script should not terminate.
     - Instead, it should log the specific error for the corresponding `companyid` and `website`.
     - The output dataframe should contain a record for the failed attempt with a null value for `text` and a value of 1 under `failure`.
+    - **Failure Reasons**: A `failure_reason` column must be populated with one of the following statuses to indicate the cause:
+        - `success`: No failure.
+        - `robots_disallowed`: Access blocked by robots.txt.
+        - `timeout`: Page load exceeded 30 seconds.
+        - `dns_error`: Domain name could not be resolved.
+        - `tls_error`: SSL/TLS handshake failed.
+        - `http_error`: Non-200 HTTP status code (e.g., 404, 500).
+        - `blocked_captcha`: Request blocked by a CAPTCHA or anti-bot challenge.
+        - `empty_text`: Page loaded but contained no visible text.
+        - `non_english`: Detected language was not English.
+        - `other_error`: Any other unclassified exception.
 
 # Input Data
 
