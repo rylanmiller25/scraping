@@ -28,6 +28,10 @@ The scraper employed here should extract all of the text from each given website
     - **Scope**: The scraper must visit the homepage of each startup. It should then identify and visit up to **9 other first-level links** (links that point to pages within the same domain, e.g., "About Us", "Team", "Product") found on the homepage.
     - **Total Pages**: A maximum of 10 pages per company (1 homepage + 9 subpages) should be scraped.
     - **Extraction**: For each visited page, use Crawl4AI to extract the **cleaned text or markdown**. This eliminates the need for manual boilerplate removal (nav bars, footers) as Crawl4AI handles this optimization. The text from all pages should be aggregated for that company.
+    - **Normalization**: Before storage or comparison, the aggregated text must be normalized to ensure robust change detection:
+        1.  **Lowercasing**: Convert all text to lowercase.
+        2.  **Whitespace Collapsing**: Replace all sequences of whitespace (spaces, tabs, newlines) with a single space.
+        3.  **Trimming**: Remove leading and trailing whitespace.
     - **Filtering**:
         - Exclude pages that are empty, represent errors (404s), or are non-English.
         - Ensure the extracted text is free of HTML tags (Crawl4AI handles this by default).
