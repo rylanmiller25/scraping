@@ -13,9 +13,9 @@ from nlp import NLPEngine
 from utils import setup_logging
 
 # --- Configuration ---
-INPUT_DIR = "Input Data"
-OUTPUT_RAW_DIR = "Output Data/Raw Text Datasets"
-OUTPUT_ANALYSIS_DIR = "Output Data/Analysis Datasets"
+INPUT_DIR = "../Input Data"
+OUTPUT_RAW_DIR = "../Output Data/Raw Text Datasets"
+OUTPUT_ANALYSIS_DIR = "../Output Data/Analysis Datasets"
 REF_STATE_FILE = "latest_state.parquet"
 BATCH_SIZE = 50  # Write checkpoint every 50 companies
 
