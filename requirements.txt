@@ -1,0 +1,9 @@
+crawl4ai
+playwright
+pandas
+pyarrow
+aiohttp
+sentence-transformers
+transformers
+torch
+langdetect
