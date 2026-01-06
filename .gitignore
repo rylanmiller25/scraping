@@ -1,0 +1,21 @@
+# Ignore Data Files
+*.parquet
+*.dta
+
+# Ignore Logs
+*.log
+
+# Ignore Python Cache and Environment
+__pycache__/
+*.pyc
+.venv/
+env/
+
+# OS specific
+.DS_Store
+
+# Keep the directory structure
+!Input Data/.gitkeep
+!Output Data/Raw Text Datasets/.gitkeep
+!Output Data/Analysis Datasets/.gitkeep
+
