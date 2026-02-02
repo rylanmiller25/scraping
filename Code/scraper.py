@@ -123,10 +123,38 @@ async def process_company(company_row: Dict[str, Any]) -> Dict[str, Any]:
                     result.success = 0
                     return _compile_result(company_row, result)
 
-                # Attempt to load the page
-                scrape_result = await crawler.arun(url=url, config=run_config)
+                # Attempt to load the page with retries
+                scrape_result = None
+                for attempt in range(3):
+                    try:
+                        logger.info(
+                            f"Attempting to scrape {url} (Attempt {attempt + 1}/3)..."
+                        )
+                        scrape_result = await crawler.arun(url=url, config=run_config)
+                        if scrape_result.success:
+                            logger.info(f"Successfully scraped {url}")
+                            break
+                        else:
+                            logger.warning(
+                                f"Failed to scrape {url} (Attempt {attempt + 1})"
+                            )
+                    except Exception as e:
+                        logger.error(f"Exception scraping {url}: {e}")
+                        # Only wait if we are going to retry this specific URL
+                        # (Network errors, timeouts etc might benefit from retry)
+                        if attempt < 2:
+                            wait_time = 15  # Long wait between retries as requested
+                            logger.info(
+                                f"Homepage retry {attempt + 1}/3 for {url} after {wait_time}s..."
+                            )
+                            await asyncio.sleep(wait_time)
+                        else:
+                            # If final attempt failed, we might log it but the outer loop handles prefix switching
+                            # However, we want to capture the specific error if it's the last prefix?
+                            # For now just let it fall through to the check below
+                            pass
 
-                if scrape_result.success:
+                if scrape_result and scrape_result.success:
                     # Check for empty text
                     if not scrape_result.markdown:
                         # Potentially empty
@@ -185,12 +213,42 @@ async def process_company(company_row: Dict[str, Any]) -> Dict[str, Any]:
                             logger.info(f"Skipping subpage {link} due to robots.txt")
                             continue
 
-                        # Random delay 2-5s
+                        # Random delay 2-5s between pages
                         await asyncio.sleep(random.uniform(2, 5))
 
                         try:
-                            sub_result = await crawler.arun(url=link, config=run_config)
-                            if sub_result.success:
+                            # Retry logic for subpages
+                            sub_result = None
+                            for attempt in range(3):
+                                try:
+                                    logger.info(
+                                        f"Attempting to scrape subpage {link} (Attempt {attempt + 1}/3)..."
+                                    )
+                                    sub_result = await crawler.arun(
+                                        url=link, config=run_config
+                                    )
+                                    if sub_result.success:
+                                        logger.info(
+                                            f"Successfully scraped subpage {link}"
+                                        )
+                                        break
+                                    else:
+                                        logger.warning(
+                                            f"Failed subpage {link} (Attempt {attempt + 1})"
+                                        )
+                                except Exception as e:
+                                    if attempt < 2:
+                                        wait_time = 15  # Long wait between retries
+                                        logger.info(
+                                            f"Subpage retry {attempt + 1}/3 for {link} after {wait_time}s..."
+                                        )
+                                        await asyncio.sleep(wait_time)
+                                    else:
+                                        logger.warning(
+                                            f"Failed to scrape subpage {link} after 3 attempts: {e}"
+                                        )
+
+                            if sub_result and sub_result.success:
                                 sub_text = normalize_text(sub_result.markdown)
                                 if sub_text and not is_captcha_or_blocked(sub_text):
                                     result.full_text += sub_text + " "

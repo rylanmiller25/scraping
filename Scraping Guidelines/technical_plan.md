@@ -72,7 +72,7 @@ The project should produce **two separate output files** for each run to optimiz
             - If a **subpage** is disallowed: Skip that specific link but continue scraping allowed pages.
     - Speed: The scraping process should be deliberate and not overly aggressive. While concurrency can be used since targets are distinct domains, avoiding high-volume bursts is preferred to prevent network issues or blocking. A limit of 5 concurrent browsers is recommended for local execution on a standard machine.
     - Timing: Implement a randomized delay of 2 to 5 seconds between navigation actions on the same domain (i.e., between the homepage and subsequent subpages). This variation makes the traffic pattern look less robotic and helps avoid rate limits.
-    - Retries: Implement a retry mechanism (e.g., 3 attempts) with backoff for transient network errors.
+    - Retries: Implement a retry mechanism (e.g., 3 attempts) with a **long backoff** (e.g., 15-30 seconds) to maximize success rates for small samples.
 
 - **Error Handling**: 
     - The scraper must implement robust error handling.
@@ -104,7 +104,7 @@ The project should produce **two separate output files** for each run to optimiz
     - `{month}` should be a **2-digit** month (e.g., `02` for February).
 - **Columns**:
     - `companyid` (**dtype: object**): Unique identifier for the company. **There will be no duplicates of `companyid`.**
-    - `website` (**dtype: object**): The domain of the company's homepage. Domains are provided **without any prefixes** (e.g., `example.com`). They will not include `www.`, `http://`, or `https://`.
+    - `website` (**dtype: object**): The domain of the company's homepage. Domains are provided **in www. format** (e.g., `www.example.com`). They will generally include `www.` but not `http://` or `https://`.
     - `yearfounded` (**dtype: float64**): Year founded (may be missing).
     - `companyname` (**dtype: object**): Company name.
     - `companyformername` (**dtype: object**): Former company name (may be missing).

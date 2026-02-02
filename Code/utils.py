@@ -3,6 +3,7 @@ import logging
 import sys
 from typing import List
 
+
 def setup_logging(log_file: str = "scraper.log"):
     """
     Sets up logging to both console and file.
@@ -10,12 +11,10 @@ def setup_logging(log_file: str = "scraper.log"):
     logging.basicConfig(
         level=logging.INFO,
         format="%(asctime)s [%(levelname)s] %(message)s",
-        handlers=[
-            logging.FileHandler(log_file),
-            logging.StreamHandler(sys.stdout)
-        ]
+        handlers=[logging.FileHandler(log_file), logging.StreamHandler(sys.stdout)],
     )
     return logging.getLogger("startup_scraper")
+
 
 def normalize_text(text: str) -> str:
     """
@@ -26,17 +25,18 @@ def normalize_text(text: str) -> str:
     """
     if not text:
         return ""
-    
+
     # 1. Lowercase
     text = text.lower()
-    
+
     # 2. Whitespace Collapsing (regex \s+ matches space, tab, newline, etc.)
-    text = re.sub(r'\s+', ' ', text)
-    
+    text = re.sub(r"\s+", " ", text)
+
     # 3. Trimming
     text = text.strip()
-    
+
     return text
+
 
 def truncate_text(text: str, max_chars: int = 500000) -> str:
     """
@@ -46,27 +46,33 @@ def truncate_text(text: str, max_chars: int = 500000) -> str:
         return ""
     return text[:max_chars]
 
+
 def get_url_variations(domain: str) -> List[str]:
     """
     Generates the prioritized list of URL prefixes for a given domain
     as specified in the implementation details.
-    
+
     Order:
     1. https://www.
     2. https://
     3. http://www.
     4. http://
     """
-    # Remove any existing protocol or www if inadvertently passed, 
-    # though input is expected to be clean domain.
-    clean_domain = domain.lower().replace("http://", "").replace("https://", "").replace("www.", "")
-    
+    # Remove any existing protocol.
+    # Input is expected to be in 'www.example.com' format, but we clean thoroughly just in case.
+    clean_domain = domain.lower().replace("http://", "").replace("https://", "")
+
+    # We strip www. to build the base, then re-add it in variations.
+    if clean_domain.startswith("www."):
+        clean_domain = clean_domain[4:]
+
     return [
         f"https://www.{clean_domain}",
         f"https://{clean_domain}",
         f"http://www.{clean_domain}",
-        f"http://{clean_domain}"
+        f"http://{clean_domain}",
     ]
+
 
 def clean_url_for_deduplication(url: str) -> str:
     """
@@ -74,19 +80,28 @@ def clean_url_for_deduplication(url: str) -> str:
     Retains other query parameters.
     """
     from urllib.parse import urlparse, parse_qs, urlencode, urlunparse
-    
+
     parsed = urlparse(url)
     query_params = parse_qs(parsed.query, keep_blank_values=True)
-    
+
     # List of tracking parameters to remove
-    tracking_params = {'utm_source', 'utm_medium', 'utm_campaign', 'utm_term', 'utm_content', 'gclid', 'fbclid'}
-    
+    tracking_params = {
+        "utm_source",
+        "utm_medium",
+        "utm_campaign",
+        "utm_term",
+        "utm_content",
+        "gclid",
+        "fbclid",
+    }
+
     # Filter out tracking params
-    new_query_params = {k: v for k, v in query_params.items() if k.lower() not in tracking_params}
-    
+    new_query_params = {
+        k: v for k, v in query_params.items() if k.lower() not in tracking_params
+    }
+
     # Reconstruct query string
     new_query = urlencode(new_query_params, doseq=True)
-    
+
     # Reconstruct URL
     return urlunparse(parsed._replace(query=new_query))
-
