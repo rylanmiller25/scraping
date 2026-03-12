@@ -1,7 +1,10 @@
 import re
 import logging
 import sys
-from typing import List
+import os
+import traceback
+import linecache
+from typing import List, Optional
 
 
 def setup_logging(log_file: str = "scraper.log"):
@@ -14,6 +17,77 @@ def setup_logging(log_file: str = "scraper.log"):
         handlers=[logging.FileHandler(log_file), logging.StreamHandler(sys.stdout)],
     )
     return logging.getLogger("startup_scraper")
+
+
+# --- Error Logging Helpers ---
+
+ERROR_DIR = os.path.join(os.path.dirname(__file__), "..", "Error")
+ERROR_FILE_PATH: Optional[str] = None
+
+
+def init_error_file_from_input_path(input_path: str) -> str:
+    """
+    Initializes the error log file for a given input parquet path.
+    The file is created in the Error/ folder and named:
+        pb_MM_YYYY_error.txt
+    based on the input file name: pb_MM_YYYY.parquet.
+    """
+    global ERROR_FILE_PATH
+
+    os.makedirs(ERROR_DIR, exist_ok=True)
+
+    base_name = os.path.basename(input_path)
+    # Expect pattern pb_MM_YYYY.parquet
+    match = re.match(r"pb_(\d{2})_(\d{4})\.parquet$", base_name)
+    if match:
+        month_str, year_str = match.groups()
+    else:
+        # Fallback: if pattern unexpected, don't block execution; use a generic name.
+        month_str, year_str = "00", "0000"
+
+    error_filename = f"pb_{month_str}_{year_str}_error.txt"
+    ERROR_FILE_PATH = os.path.join(ERROR_DIR, error_filename)
+
+    # Start fresh each run for the given month/year.
+    with open(ERROR_FILE_PATH, "w", encoding="utf-8") as f:
+        f.write(f"Error log for input file: {base_name}\n\n")
+
+    return ERROR_FILE_PATH
+
+
+def log_error(exc: BaseException, py_file: str) -> None:
+    """
+    Logs an error to the monthly error file, if initialized.
+
+    The log entry includes:
+      1) The error message.
+      2) The .py file where logging is invoked.
+      3) The specific line of code that raised the error (line number and source).
+    """
+    if not ERROR_FILE_PATH:
+        # If the error file was never initialized, we do not attempt to create it here
+        # to avoid masking the original control flow; just return silently.
+        return
+
+    # Walk to the deepest traceback frame
+    tb = exc.__traceback__
+    last_tb = tb
+    while last_tb and last_tb.tb_next:
+        last_tb = last_tb.tb_next
+
+    line_no = last_tb.tb_lineno if last_tb else -1
+    code_filename = last_tb.tb_frame.f_code.co_filename if last_tb else ""
+    code_line = linecache.getline(code_filename, line_no).strip() if line_no > 0 else ""
+
+    with open(ERROR_FILE_PATH, "a", encoding="utf-8") as f:
+        f.write("=== ERROR ===\n")
+        f.write(f"Error: {repr(exc)}\n")
+        f.write(f"Py File: {py_file}\n")
+        if line_no > 0:
+            f.write(f"Code Line: {line_no}: {code_line}\n")
+        else:
+            f.write("Code Line: <unavailable>\n")
+        f.write("\n")
 
 
 def normalize_text(text: str) -> str:

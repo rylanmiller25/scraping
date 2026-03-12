@@ -10,7 +10,7 @@ from typing import Dict, List, Any
 
 from scraper import process_company
 from nlp import NLPEngine
-from utils import setup_logging
+from utils import setup_logging, init_error_file_from_input_path, log_error
 
 # --- Configuration ---
 INPUT_DIR = "../Input Data"
@@ -78,168 +78,163 @@ def get_input_file(year: int, month: int) -> str:
 
 
 async def main():
-    # 1. Determine Date context
-    now = datetime.datetime.now()
-    current_year = now.year
-    current_month = now.month
+    try:
+        # 1. Determine Date context
+        now = datetime.datetime.now()
+        current_year = now.year
+        current_month = now.month
 
-    logger.info(f"Starting scraping job for {current_year}-{current_month:02d}")
+        logger.info(f"Starting scraping job for {current_year}-{current_month:02d}")
 
-    # 2. Load Input Data
-    input_file = get_input_file(current_year, current_month)
-    if not input_file:
-        logger.error(
-            f"No input file found for {current_year}-{current_month:02d}. Expected in {INPUT_DIR}"
+        # 2. Load Input Data
+        input_file = get_input_file(current_year, current_month)
+        if not input_file:
+            logger.error(
+                f"No input file found for {current_year}-{current_month:02d}. Expected in {INPUT_DIR}"
+            )
+            return
+
+        # Initialize monthly error file based on the input parquet name.
+        init_error_file_from_input_path(input_file)
+
+        logger.info(f"Reading input data from {input_file}")
+        input_df = pd.read_parquet(input_file)
+
+        # Normalize all column names to lowercase so that casing differences
+        # across monthly input files do not break the pipeline.
+        input_df.columns = [c.lower() for c in input_df.columns]
+
+        # 3. Load Reference State
+        ref_state = await load_reference_state()
+
+        # 4. Initialize NLP Engine
+        nlp_engine = NLPEngine()
+
+        # 5. Checkpointing / Resume Logic
+        # We'll write to a temporary monthly file and append to it.
+        # Check if output files already exist to see what we've done.
+        raw_output_path = os.path.join(
+            OUTPUT_RAW_DIR, f"raw_{current_month:02d}_{current_year}.parquet"
         )
-        return
 
-    logger.info(f"Reading input data from {input_file}")
-    input_df = pd.read_parquet(input_file)
+        processed_ids = set()
+        if os.path.exists(raw_output_path):
+            logger.info(f"Found existing output file {raw_output_path}. Resuming...")
+            existing_df = pd.read_parquet(raw_output_path)
+            processed_ids = set(existing_df["companyid"])
+            logger.info(f"Already processed {len(processed_ids)} companies.")
 
-    # 3. Load Reference State
-    ref_state = await load_reference_state()
+        # Filter input_df
+        companies_to_process = input_df[~input_df["companyid"].isin(processed_ids)].copy()
+        companies_to_process.sort_values("companyid", inplace=True)
 
-    # 4. Initialize NLP Engine
-    nlp_engine = NLPEngine()
+        total_to_process = len(companies_to_process)
+        logger.info(f"Remaining companies to process: {total_to_process}")
 
-    # 5. Checkpointing / Resume Logic
-    # We'll write to a temporary monthly file and append to it.
-    # Check if output files already exist to see what we've done.
-    raw_output_path = os.path.join(
-        OUTPUT_RAW_DIR, f"raw_{current_month:02d}_{current_year}.parquet"
-    )
+        if total_to_process == 0:
+            logger.info("All companies processed.")
+            return
 
-    processed_ids = set()
-    if os.path.exists(raw_output_path):
-        logger.info(f"Found existing output file {raw_output_path}. Resuming...")
-        existing_df = pd.read_parquet(raw_output_path)
-        processed_ids = set(existing_df["companyid"])
-        logger.info(f"Already processed {len(processed_ids)} companies.")
+        # 6. Setup Concurrency
+        semaphore = asyncio.Semaphore(5)
 
-    # Filter input_df
-    companies_to_process = input_df[~input_df["companyid"].isin(processed_ids)].copy()
-    companies_to_process.sort_values("companyid", inplace=True)
+        # buffer for batch writing
+        results_buffer = []
 
-    total_to_process = len(companies_to_process)
-    logger.info(f"Remaining companies to process: {total_to_process}")
+        # Processing Loop
+        # We iterate and create tasks. For massive datasets, we might want to chunk this
+        # so we don't create millions of coroutines at once.
+        # Given "startups founded since 2026", the list might grow but manageable.
+        # Let's process in chunks or just iterate with semaphore.
 
-    if total_to_process == 0:
-        logger.info("All companies processed.")
-        return
+        tasks = []
 
-    # 6. Setup Concurrency
-    semaphore = asyncio.Semaphore(5)
+        # Helper to process one company with semaphore
+        async def process_wrapper(row):
+            async with semaphore:
+                return await process_company(row)
 
-    # buffer for batch writing
-    results_buffer = []
+        # Convert dataframe to list of dicts
+        company_rows = companies_to_process.to_dict("records")
 
-    # Processing Loop
-    # We iterate and create tasks. For massive datasets, we might want to chunk this
-    # so we don't create millions of coroutines at once.
-    # Given "startups founded since 2026", the list might grow but manageable.
-    # Let's process in chunks or just iterate with semaphore.
+        for i, row in enumerate(company_rows):
+            # Let's do chunks of BATCH_SIZE
+            tasks.append(process_wrapper(row))
 
-    tasks = []
+            if len(tasks) >= BATCH_SIZE or i == total_to_process - 1:
+                logger.info(f"Processing batch ending at index {i}...")
+                batch_results = await asyncio.gather(*tasks)
 
-    # Helper to process one company with semaphore
-    async def process_wrapper(row):
-        async with semaphore:
-            return await process_company(row)
+                # Process results (Deduplication + NLP)
+                for res_row in batch_results:
+                    company_id = res_row["companyid"]
+                    current_text = res_row.get("text")
 
-    # Convert dataframe to list of dicts
-    company_rows = companies_to_process.to_dict("records")
-
-    for i, row in enumerate(company_rows):
-        # Run scraping
-        # Note: We run strictly sequentially or in parallel?
-        # Plan: "Max 5 concurrent companies".
-        # We can create tasks and use asyncio.gather, but we need to handle batch writing.
-        # Better: use an async iterator or manage a pool of workers.
-        # Simple approach: asyncio.as_completed or similar.
-
-        # We'll use a task list and wait for them, but strictly limiting concurrency is key.
-        # Semaphore handles the resource limit, but creating 10k tasks at once consumes memory.
-        # Let's use a bounded semaphore and simple gather for small batches or
-        # just iterate and append to tasks, but await them in chunks to write to disk.
-
-        # Let's do chunks of BATCH_SIZE
-        tasks.append(process_wrapper(row))
-
-        if len(tasks) >= BATCH_SIZE or i == total_to_process - 1:
-            logger.info(f"Processing batch ending at index {i}...")
-            batch_results = await asyncio.gather(*tasks)
-
-            # Process results (Deduplication + NLP)
-            for res_row in batch_results:
-                company_id = res_row["companyid"]
-                current_text = res_row.get("text")
-
-                # Logic from plan:
-                # If failure, current_text is None or empty.
-                # If success, we have text.
-
-                similarity_score = 0.0
-                has_change = 0
-                final_stored_text = None
-
-                if res_row["failure"] == 0 and current_text:
-                    ref_text = ref_state.get(company_id)
-
-                    if ref_text == current_text:
-                        # No change
-                        final_stored_text = "-"
-                        similarity_score = 1.0
-                        has_change = 0
-                        # Do NOT update ref_state
-                    else:
-                        # Changed or New
-                        final_stored_text = current_text
-                        has_change = 1
-
-                        # Calculate Similarity
-                        if ref_text:
-                            similarity_score = nlp_engine.compute_similarity(
-                                current_text, ref_text
-                            )
-                        else:
-                            # New company, no history to compare?
-                            # Plan doesn't explicitly specify score for new, but usually 0 or None.
-                            # "Compare... against the Reference State". If no ref state, similarity is undefined or 0.
-                            # Let's assume 0.0 implies "completely different" (which it is, compared to nothing).
-                            similarity_score = 0.0
-
-                        # Update Reference State
-                        ref_state[company_id] = current_text
-                else:
-                    # Failure case
-                    final_stored_text = None  # or empty string? Plan says "null value for text" (Line 81)
-                    similarity_score = 0.0  # or NaN
+                    similarity_score = 0.0
                     has_change = 0
+                    final_stored_text = None
 
-                # Update row for output
-                res_row["text"] = final_stored_text
-                res_row["similarity_score"] = similarity_score
-                res_row["has_change"] = has_change
-                res_row["year"] = current_year
-                res_row["month"] = current_month
+                    if res_row["failure"] == 0 and current_text:
+                        ref_text = ref_state.get(company_id)
 
-                results_buffer.append(res_row)
+                        if ref_text == current_text:
+                            # No change
+                            final_stored_text = "-"
+                            similarity_score = 1.0
+                            has_change = 0
+                            # Do NOT update ref_state
+                        else:
+                            # Changed or New
+                            final_stored_text = current_text
+                            has_change = 1
 
-            # Write Batch to Disk
-            if results_buffer:
-                _write_batch(
-                    results_buffer, raw_output_path, current_year, current_month
-                )
-                results_buffer = []  # clear buffer
+                            # Calculate Similarity
+                            if ref_text:
+                                similarity_score = nlp_engine.compute_similarity(
+                                    current_text, ref_text
+                                )
+                            else:
+                                # New company, no history to compare?
+                                # If no ref state, similarity is undefined or 0.
+                                similarity_score = 0.0
 
-            # Save Reference State Checkpoint (optional but good for safety)
-            save_reference_state(ref_state)
+                            # Update Reference State
+                            ref_state[company_id] = current_text
+                    else:
+                        # Failure case
+                        final_stored_text = None
+                        similarity_score = 0.0
+                        has_change = 0
 
-            tasks = []  # Reset tasks
+                    # Update row for output
+                    res_row["text"] = final_stored_text
+                    res_row["similarity_score"] = similarity_score
+                    res_row["has_change"] = has_change
+                    res_row["year"] = current_year
+                    res_row["month"] = current_month
 
-    # Final Save of Reference State
-    save_reference_state(ref_state)
-    logger.info("Job complete.")
+                    results_buffer.append(res_row)
+
+                # Write Batch to Disk
+                if results_buffer:
+                    _write_batch(
+                        results_buffer, raw_output_path, current_year, current_month
+                    )
+                    results_buffer = []  # clear buffer
+
+                # Save Reference State Checkpoint (optional but good for safety)
+                save_reference_state(ref_state)
+
+                tasks = []  # Reset tasks
+
+        # Final Save of Reference State
+        save_reference_state(ref_state)
+        logger.info("Job complete.")
+    except Exception as e:
+        # Capture any unhandled exception in main and log it to the monthly error file.
+        log_error(e, __file__)
+        logger.error(f"Unhandled error in main: {e}")
+        raise
 
 
 def _write_batch(rows: List[Dict], raw_path: str, year: int, month: int):

@@ -17,6 +17,7 @@ from utils import (
     truncate_text,
     get_url_variations,
     clean_url_for_deduplication,
+    log_error,
 )
 
 logger = logging.getLogger("startup_scraper")
@@ -100,202 +101,200 @@ async def process_company(company_row: Dict[str, Any]) -> Dict[str, Any]:
 
     result = ScrapeResult()
 
-    # 1. URL Normalization & Connection Attempt
-    target_urls = get_url_variations(raw_domain)
-    valid_homepage_url = None
+    try:
+        # 1. URL Normalization & Connection Attempt
+        target_urls = get_url_variations(raw_domain)
+        valid_homepage_url = None
 
-    # Configuration for the crawler
-    run_config = CrawlerRunConfig(verbose=False, cache_mode=CacheMode.BYPASS)
+        # Configuration for the crawler
+        run_config = CrawlerRunConfig(verbose=False, cache_mode=CacheMode.BYPASS)
 
-    # User Agent
-    user_agent = "Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36"
-    browser_config = BrowserConfig(user_agent=user_agent, headless=True, verbose=False)
+        # User Agent
+        user_agent = "Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36"
+        browser_config = BrowserConfig(user_agent=user_agent, headless=True, verbose=False)
 
-    async with AsyncWebCrawler(config=browser_config) as crawler:
-        # --- Step 1: Find Valid Homepage ---
-        for url in target_urls:
-            try:
-                # Check robots.txt first
-                is_allowed, robot_parser = await check_robots_txt(url, user_agent)
+        async with AsyncWebCrawler(config=browser_config) as crawler:
+            # --- Step 1: Find Valid Homepage ---
+            for url in target_urls:
+                try:
+                    # Check robots.txt first
+                    is_allowed, robot_parser = await check_robots_txt(url, user_agent)
 
-                if not is_allowed:
-                    result.failure_reason = "robots_disallowed"
-                    result.success = 0
-                    return _compile_result(company_row, result)
-
-                # Attempt to load the page with retries
-                scrape_result = None
-                for attempt in range(3):
-                    try:
-                        logger.info(
-                            f"Attempting to scrape {url} (Attempt {attempt + 1}/3)..."
-                        )
-                        scrape_result = await crawler.arun(url=url, config=run_config)
-                        if scrape_result.success:
-                            logger.info(f"Successfully scraped {url}")
-                            break
-                        else:
-                            logger.warning(
-                                f"Failed to scrape {url} (Attempt {attempt + 1})"
-                            )
-                    except Exception as e:
-                        logger.error(f"Exception scraping {url}: {e}")
-                        # Only wait if we are going to retry this specific URL
-                        # (Network errors, timeouts etc might benefit from retry)
-                        if attempt < 2:
-                            wait_time = 15  # Long wait between retries as requested
-                            logger.info(
-                                f"Homepage retry {attempt + 1}/3 for {url} after {wait_time}s..."
-                            )
-                            await asyncio.sleep(wait_time)
-                        else:
-                            # If final attempt failed, we might log it but the outer loop handles prefix switching
-                            # However, we want to capture the specific error if it's the last prefix?
-                            # For now just let it fall through to the check below
-                            pass
-
-                if scrape_result and scrape_result.success:
-                    # Check for empty text
-                    if not scrape_result.markdown:
-                        # Potentially empty
-                        pass
-
-                    cleaned_text = normalize_text(scrape_result.markdown)
-
-                    if not cleaned_text:
-                        # Empty text on homepage -> soft failure, try next prefix
-                        result.failure_reason = "empty_text"
-                        continue
-
-                    # Check for CAPTCHA / Block
-                    if is_captcha_or_blocked(cleaned_text):
-                        result.failure_reason = "blocked_captcha"
-                        # If blocked, likely blocked on all prefixes, but we can abort or continue.
-                        # Usually a hard block.
+                    if not is_allowed:
+                        result.failure_reason = "robots_disallowed"
                         result.success = 0
                         return _compile_result(company_row, result)
 
-                    # Check Language
-                    try:
-                        # Detect on a substring to save time/memory, e.g. first 1000 chars
-                        lang = detect(cleaned_text[:1000])
-                        if lang != "en":
-                            result.failure_reason = "non_english"
-                            result.success = 0
-                            return _compile_result(company_row, result)
-                    except LangDetectException:
-                        # Could not detect language (too short? numbers?)
-                        # We'll assume it's okay or mark as empty/other.
-                        # If text is very short, langdetect fails.
-                        # If it passed empty check, let's allow it but warn.
-                        pass
-
-                    # If we passed all checks:
-                    valid_homepage_url = url
-                    result.full_text += cleaned_text + " "
-                    result.num_pages_scraped += 1
-                    result.urls_visited.append(url)
-
-                    # Extract internal links
-                    internal_links = scrape_result.links.get("internal", [])
-                    subpages = _filter_subpages(internal_links, valid_homepage_url)
-
-                    # --- Step 2: Process Subpages ---
-                    count = 0
-                    for link in subpages:
-                        if count >= 9:
-                            break
-
-                        # Check robots for subpage if we have a parser
-                        if robot_parser and not robot_parser.can_fetch(
-                            user_agent, link
-                        ):
-                            logger.info(f"Skipping subpage {link} due to robots.txt")
-                            continue
-
-                        # Random delay 2-5s between pages
-                        await asyncio.sleep(random.uniform(2, 5))
-
+                    # Attempt to load the page with retries
+                    scrape_result = None
+                    for attempt in range(3):
                         try:
-                            # Retry logic for subpages
-                            sub_result = None
-                            for attempt in range(3):
-                                try:
-                                    logger.info(
-                                        f"Attempting to scrape subpage {link} (Attempt {attempt + 1}/3)..."
-                                    )
-                                    sub_result = await crawler.arun(
-                                        url=link, config=run_config
-                                    )
-                                    if sub_result.success:
-                                        logger.info(
-                                            f"Successfully scraped subpage {link}"
-                                        )
-                                        break
-                                    else:
-                                        logger.warning(
-                                            f"Failed subpage {link} (Attempt {attempt + 1})"
-                                        )
-                                except Exception as e:
-                                    if attempt < 2:
-                                        wait_time = 15  # Long wait between retries
-                                        logger.info(
-                                            f"Subpage retry {attempt + 1}/3 for {link} after {wait_time}s..."
-                                        )
-                                        await asyncio.sleep(wait_time)
-                                    else:
-                                        logger.warning(
-                                            f"Failed to scrape subpage {link} after 3 attempts: {e}"
-                                        )
-
-                            if sub_result and sub_result.success:
-                                sub_text = normalize_text(sub_result.markdown)
-                                if sub_text and not is_captcha_or_blocked(sub_text):
-                                    result.full_text += sub_text + " "
-                                    result.num_pages_scraped += 1
-                                    result.urls_visited.append(link)
-                                    count += 1
+                            logger.info(
+                                f"Attempting to scrape {url} (Attempt {attempt + 1}/3)..."
+                            )
+                            scrape_result = await crawler.arun(url=url, config=run_config)
+                            if scrape_result.success:
+                                logger.info(f"Successfully scraped {url}")
+                                break
                             else:
                                 logger.warning(
-                                    f"Failed to scrape subpage {link} for {company_id}"
+                                    f"Failed to scrape {url} (Attempt {attempt + 1})"
+                                )
+                        except Exception as e:
+                            logger.error(f"Exception scraping {url}: {e}")
+                            # Only wait if we are going to retry this specific URL
+                            if attempt < 2:
+                                wait_time = 15  # Long wait between retries as requested
+                                logger.info(
+                                    f"Homepage retry {attempt + 1}/3 for {url} after {wait_time}s..."
+                                )
+                                await asyncio.sleep(wait_time)
+
+                    if scrape_result and scrape_result.success:
+                        # Check for empty text
+                        if not scrape_result.markdown:
+                            # Potentially empty
+                            pass
+
+                        cleaned_text = normalize_text(scrape_result.markdown)
+
+                        if not cleaned_text:
+                            # Empty text on homepage -> soft failure, try next prefix
+                            result.failure_reason = "empty_text"
+                            continue
+
+                        # Check for CAPTCHA / Block
+                        if is_captcha_or_blocked(cleaned_text):
+                            result.failure_reason = "blocked_captcha"
+                            result.success = 0
+                            return _compile_result(company_row, result)
+
+                        # Check Language
+                        try:
+                            # Detect on a substring to save time/memory, e.g. first 1000 chars
+                            lang = detect(cleaned_text[:1000])
+                            if lang != "en":
+                                result.failure_reason = "non_english"
+                                result.success = 0
+                                return _compile_result(company_row, result)
+                        except LangDetectException:
+                            # Could not detect language (too short? numbers?)
+                            # If text is very short, langdetect fails.
+                            pass
+
+                        # If we passed all checks:
+                        valid_homepage_url = url
+                        result.full_text += cleaned_text + " "
+                        result.num_pages_scraped += 1
+                        result.urls_visited.append(url)
+
+                        # Extract internal links
+                        internal_links = scrape_result.links.get("internal", [])
+                        subpages = _filter_subpages(internal_links, valid_homepage_url)
+
+                        # --- Step 2: Process Subpages ---
+                        count = 0
+                        for link in subpages:
+                            if count >= 9:
+                                break
+
+                            # Check robots for subpage if we have a parser
+                            if robot_parser and not robot_parser.can_fetch(
+                                user_agent, link
+                            ):
+                                logger.info(f"Skipping subpage {link} due to robots.txt")
+                                continue
+
+                            # Random delay 2-5s between pages
+                            await asyncio.sleep(random.uniform(2, 5))
+
+                            try:
+                                # Retry logic for subpages
+                                sub_result = None
+                                for attempt in range(3):
+                                    try:
+                                        logger.info(
+                                            f"Attempting to scrape subpage {link} (Attempt {attempt + 1}/3)..."
+                                        )
+                                        sub_result = await crawler.arun(
+                                            url=link, config=run_config
+                                        )
+                                        if sub_result.success:
+                                            logger.info(
+                                                f"Successfully scraped subpage {link}"
+                                            )
+                                            break
+                                        else:
+                                            logger.warning(
+                                                f"Failed subpage {link} (Attempt {attempt + 1})"
+                                            )
+                                    except Exception as e:
+                                        if attempt < 2:
+                                            wait_time = 15  # Long wait between retries
+                                            logger.info(
+                                                f"Subpage retry {attempt + 1}/3 for {link} after {wait_time}s..."
+                                            )
+                                            await asyncio.sleep(wait_time)
+                                        else:
+                                            logger.warning(
+                                                f"Failed to scrape subpage {link} after 3 attempts: {e}"
+                                            )
+
+                                if sub_result and sub_result.success:
+                                    sub_text = normalize_text(sub_result.markdown)
+                                    if sub_text and not is_captcha_or_blocked(sub_text):
+                                        result.full_text += sub_text + " "
+                                        result.num_pages_scraped += 1
+                                        result.urls_visited.append(link)
+                                        count += 1
+                                else:
+                                    logger.warning(
+                                        f"Failed to scrape subpage {link} for {company_id}"
+                                    )
+
+                            except Exception as e:
+                                logger.warning(
+                                    f"Error scraping subpage {link} for {company_id}: {e}"
                                 )
 
-                        except Exception as e:
-                            logger.warning(
-                                f"Error scraping subpage {link} for {company_id}: {e}"
-                            )
+                        # Success!
+                        result.success = 1
+                        result.failure_reason = "success"
+                        break  # Stop trying other prefixes
 
-                    # Success!
-                    result.success = 1
-                    result.failure_reason = "success"
-                    break  # Stop trying other prefixes
+                except asyncio.TimeoutError:
+                    result.failure_reason = "timeout"
+                except aiohttp.ClientConnectorError:
+                    result.failure_reason = "dns_error"  # or connection error
+                except Exception as e:
+                    # Map some common SSL errors if possible, otherwise generic
+                    err_str = str(e).lower()
+                    if "ssl" in err_str or "certificate" in err_str:
+                        result.failure_reason = "tls_error"
+                    else:
+                        result.failure_reason = "http_error"  # generic fallback
 
-            except asyncio.TimeoutError:
-                result.failure_reason = "timeout"
-            except aiohttp.ClientConnectorError:
-                result.failure_reason = "dns_error"  # or connection error
-            except Exception as e:
-                # Log specific error if needed, try next prefix
-                # Map some common SSL errors if possible, otherwise generic
-                err_str = str(e).lower()
-                if "ssl" in err_str or "certificate" in err_str:
-                    result.failure_reason = "tls_error"
-                else:
-                    result.failure_reason = "http_error"  # generic fallback
-                pass
+        # --- Finalize Result ---
 
-    # --- Finalize Result ---
+        if not valid_homepage_url:
+            # If we exhausted the loop without success, 'result.failure_reason'
+            # holds the reason for the LAST attempt.
+            result.success = 0
 
-    if not valid_homepage_url:
-        # If we exhausted the loop without success, 'result.failure_reason'
-        # holds the reason for the LAST attempt.
+        # Global text limit
+        result.full_text = truncate_text(result.full_text.strip())
+        result.text_length = len(result.full_text)
+
+        return _compile_result(company_row, result)
+    except Exception as e:
+        # Any unexpected error in the scraping flow gets logged with file and line info.
+        log_error(e, __file__)
+        logger.error(f"Unhandled error while processing company {company_id}: {e}")
         result.success = 0
-
-    # Global text limit
-    result.full_text = truncate_text(result.full_text.strip())
-    result.text_length = len(result.full_text)
-
-    return _compile_result(company_row, result)
+        result.failure_reason = "unhandled_exception"
+        result.full_text = ""
+        result.text_length = 0
+        return _compile_result(company_row, result)
 
 
 def _filter_subpages(links: List[Dict], homepage_url: str) -> List[str]:

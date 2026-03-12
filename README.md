@@ -38,12 +38,22 @@ To run the scraper for the current month:
 1.  Open a terminal.
 2.  Navigate to the `Code` directory:
     ```bash
-    cd Code
+    cd "/Users/rylanmiller/Desktop/Startup Positioning/scraping/Code"
     ```
 3.  Run the main script:
     ```bash
     python main.py
     ```
+
+## Tracking Errors
+
+-   Before processing, all variable names are normalized by lowercase such that there should not be any discrepancies in naming conventions.
+-   **Error folder**: Any unexpected errors during a run are logged to text files in the `Error/` folder at the project root.
+-   **Per-month error file**: When `main.py` starts and finds the monthly input file (for example, `pb_03_2026.parquet`), it creates or overwrites a matching error file named `pb_03_2026_error.txt` inside `Error/`.
+-   **Recorded information**: Each time an unhandled exception occurs in `main.py`, `scraper.py`, or `nlp.py`, a new entry is appended to that month’s error file, including:
+    1. What the error is (the Python exception message),
+    2. Which `.py` file was running when it happened,
+    3. The specific line of code that raised the error (line number and source text).
 
 ## Logic Overview
 

@@ -1,0 +1,7 @@
+Error log for input file: pb_03_2026.parquet
+
+=== ERROR ===
+Error: KeyError('companyid')
+Py File: /Users/rylanmiller/Desktop/Startup Positioning/scraping/Code/main.py
+Code Line: 3812: raise KeyError(key) from err
+
