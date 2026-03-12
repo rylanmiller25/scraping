@@ -54,6 +54,7 @@ To run the scraper for the current month:
     1. What the error is (the Python exception message),
     2. Which `.py` file was running when it happened,
     3. The specific line of code that raised the error (line number and source text).
+-   Additionally, any individual page (homepage or subpage) that takes longer than roughly 30 seconds to load is treated as a timeout and skipped for that run; this behavior will be reflected in the error logs when relevant.
 
 ## Logic Overview
 

@@ -132,7 +132,10 @@ async def process_company(company_row: Dict[str, Any]) -> Dict[str, Any]:
                             logger.info(
                                 f"Attempting to scrape {url} (Attempt {attempt + 1}/3)..."
                             )
-                            scrape_result = await crawler.arun(url=url, config=run_config)
+                            # Enforce a hard per-page timeout of 30 seconds
+                            scrape_result = await asyncio.wait_for(
+                                crawler.arun(url=url, config=run_config), timeout=30
+                            )
                             if scrape_result.success:
                                 logger.info(f"Successfully scraped {url}")
                                 break
@@ -140,6 +143,12 @@ async def process_company(company_row: Dict[str, Any]) -> Dict[str, Any]:
                                 logger.warning(
                                     f"Failed to scrape {url} (Attempt {attempt + 1})"
                                 )
+                        except asyncio.TimeoutError:
+                            logger.warning(
+                                f"Timeout scraping {url} (Attempt {attempt + 1}) after 30 seconds."
+                            )
+                            if attempt == 2:
+                                result.failure_reason = "timeout"
                         except Exception as e:
                             logger.error(f"Exception scraping {url}: {e}")
                             # Only wait if we are going to retry this specific URL
@@ -216,8 +225,10 @@ async def process_company(company_row: Dict[str, Any]) -> Dict[str, Any]:
                                         logger.info(
                                             f"Attempting to scrape subpage {link} (Attempt {attempt + 1}/3)..."
                                         )
-                                        sub_result = await crawler.arun(
-                                            url=link, config=run_config
+                                        # Enforce a hard per-page timeout of 30 seconds
+                                        sub_result = await asyncio.wait_for(
+                                            crawler.arun(url=link, config=run_config),
+                                            timeout=30,
                                         )
                                         if sub_result.success:
                                             logger.info(
@@ -228,6 +239,10 @@ async def process_company(company_row: Dict[str, Any]) -> Dict[str, Any]:
                                             logger.warning(
                                                 f"Failed subpage {link} (Attempt {attempt + 1})"
                                             )
+                                    except asyncio.TimeoutError:
+                                        logger.warning(
+                                            f"Timeout scraping subpage {link} (Attempt {attempt + 1}) after 30 seconds."
+                                        )
                                     except Exception as e:
                                         if attempt < 2:
                                             wait_time = 15  # Long wait between retries
