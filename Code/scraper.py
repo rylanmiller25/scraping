@@ -100,18 +100,42 @@ async def process_company(company_row: Dict[str, Any]) -> Dict[str, Any]:
     raw_domain = company_row.get("website")
 
     result = ScrapeResult()
+    user_agent = "Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36"
 
     try:
-        # 1. URL Normalization & Connection Attempt
+        # 1. URL Normalization
         target_urls = get_url_variations(raw_domain)
         valid_homepage_url = None
 
-        # Configuration for the crawler
-        run_config = CrawlerRunConfig(verbose=False, cache_mode=CacheMode.BYPASS)
+        # 2. Pre-checks BEFORE launching Playwright: skip browser if we'd scrape nothing
+        # 2a. Robots: if first URL is disallowed, fail without opening browser
+        if target_urls:
+            is_allowed, _ = await check_robots_txt(target_urls[0], user_agent)
+            if not is_allowed:
+                result.failure_reason = "robots_disallowed"
+                result.success = 0
+                return _compile_result(company_row, result)
 
-        # User Agent
-        user_agent = "Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36"
-        browser_config = BrowserConfig(user_agent=user_agent, headless=True, verbose=False)
+        # 2b. Quick connectivity check (10s): if site doesn't respond, fail without opening browser
+        if target_urls:
+            try:
+                async with aiohttp.ClientSession() as session:
+                    async with session.get(target_urls[0], timeout=aiohttp.ClientTimeout(total=10)) as resp:
+                        pass  # any response means we might get content
+            except (asyncio.TimeoutError, aiohttp.ClientError, OSError) as e:
+                logger.warning(f"Pre-check failed for {target_urls[0]}: {e}. Skipping Playwright.")
+                result.failure_reason = "timeout"
+                result.success = 0
+                return _compile_result(company_row, result)
+
+        # 3. Configuration and browser launch (only if pre-checks passed)
+        run_config = CrawlerRunConfig(verbose=False, cache_mode=CacheMode.BYPASS)
+        browser_config = BrowserConfig(
+            user_agent=user_agent,
+            headless=True,
+            verbose=False,
+            timeout=900000,  # ms (15 min) for browser launch
+        )
 
         async with AsyncWebCrawler(config=browser_config) as crawler:
             # --- Step 1: Find Valid Homepage ---

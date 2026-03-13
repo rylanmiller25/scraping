@@ -136,7 +136,7 @@ async def main():
             return
 
         # 6. Setup Concurrency
-        semaphore = asyncio.Semaphore(5)
+        semaphore = asyncio.Semaphore(2)
 
         # buffer for batch writing
         results_buffer = []
