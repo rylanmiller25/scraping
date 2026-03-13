@@ -130,11 +130,11 @@ async def process_company(company_row: Dict[str, Any]) -> Dict[str, Any]:
 
         # 3. Configuration and browser launch (only if pre-checks passed)
         run_config = CrawlerRunConfig(verbose=False, cache_mode=CacheMode.BYPASS)
+        # Crawl4AI's BrowserConfig does not expose launch timeout; Playwright default (180s) is used.
         browser_config = BrowserConfig(
             user_agent=user_agent,
             headless=True,
             verbose=False,
-            timeout=900000,  # ms (15 min) for browser launch
         )
 
         async with AsyncWebCrawler(config=browser_config) as crawler:
