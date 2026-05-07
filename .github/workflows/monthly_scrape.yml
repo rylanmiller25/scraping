@@ -62,27 +62,7 @@ jobs:
           SCRAPE_YEAR: ${{ inputs.year }}
           SCRAPE_MONTH: ${{ inputs.month }}
         run: |
-          python - <<'PY'
-          import os, datetime, glob, sys
-          y = os.getenv("SCRAPE_YEAR")
-          m = os.getenv("SCRAPE_MONTH")
-          now = datetime.datetime.utcnow()
-          year = int(y) if y else now.year
-          month = int(m) if m else now.month
-          expected = f"Output Data/Raw Text Datasets/raw_{month:02d}_{year}.parquet"
-          matches = glob.glob(expected)
-          if not matches:
-            print(f"No raw output found at {expected}; nothing to commit.")
-            sys.exit(0)
-          print(f"Found raw output: {expected}")
-          PY
-
-          git status --porcelain
-          git config user.name "github-actions[bot]"
-          git config user.email "github-actions[bot]@users.noreply.github.com"
-
-          # Add only the expected raw output parquet (avoid committing anything else).
-          python - <<'PY'
+          RAW_PATH="$(python - <<'PY'
           import os, datetime
           y = os.getenv("SCRAPE_YEAR")
           m = os.getenv("SCRAPE_MONTH")
@@ -90,10 +70,20 @@ jobs:
           year = int(y) if y else now.year
           month = int(m) if m else now.month
           print(f"Output Data/Raw Text Datasets/raw_{month:02d}_{year}.parquet")
-          PY > _raw_path.txt
+          PY
+          )"
 
-          RAW_PATH="$(cat _raw_path.txt)"
-          rm -f _raw_path.txt
+          if [ ! -f "$RAW_PATH" ]; then
+            echo "No raw output found at $RAW_PATH; nothing to commit."
+            exit 0
+          fi
+          echo "Found raw output: $RAW_PATH"
+
+          git status --porcelain
+          git config user.name "github-actions[bot]"
+          git config user.email "github-actions[bot]@users.noreply.github.com"
+
+          # Add only the expected raw output parquet (avoid committing anything else).
           git add "$RAW_PATH"
 
           # If nothing changed (same file already committed), exit cleanly.
