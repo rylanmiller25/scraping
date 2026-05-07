@@ -59,6 +59,17 @@ jobs:
         run: |
           python scrape_month.py
 
+      - name: Upload raw output artifact (fallback)
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: raw-output
+          if-no-files-found: warn
+          path: |
+            Output Data/Raw Text Datasets/raw_*.parquet
+            Error/*_error.txt
+            Code/scraper.log
+
       - name: Commit raw output to repo
         # Only commit if the scraper produced a raw parquet for this month.
         working-directory: .
