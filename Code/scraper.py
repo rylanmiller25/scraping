@@ -135,6 +135,7 @@ async def check_robots_txt(
     robots_url = urljoin(base_url, "/robots.txt")
     parser = RobotFileParser()
     proxy_url = _brightdata_proxy_url()
+    ssl_param = False if proxy_url else None
 
     try:
         async with aiohttp.ClientSession() as session:
@@ -142,6 +143,7 @@ async def check_robots_txt(
                 robots_url,
                 timeout=10,
                 proxy=proxy_url or None,
+                ssl=ssl_param,
             ) as response:
                 if response.status == 200:
                     content = await response.text()
@@ -200,6 +202,7 @@ async def process_company(company_row: Dict[str, Any]) -> Dict[str, Any]:
     result = ScrapeResult()
     user_agent = "Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36"
     proxy_url = _brightdata_proxy_url()
+    ssl_param = False if proxy_url else None
 
     try:
         # 1. URL Normalization
@@ -223,6 +226,7 @@ async def process_company(company_row: Dict[str, Any]) -> Dict[str, Any]:
                         target_urls[0],
                         timeout=aiohttp.ClientTimeout(total=10),
                         proxy=proxy_url or None,
+                        ssl=ssl_param,
                     ) as resp:
                         pass  # any response means we might get content
             except (asyncio.TimeoutError, aiohttp.ClientError, OSError) as e:
