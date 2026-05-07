@@ -89,6 +89,7 @@ async def run_scrape(year: int, month: int) -> None:
                 fail_row["text"] = None
                 fail_row["failure"] = 1
                 fail_row["failure_reason"] = "timeout"
+                fail_row["failure_detail"] = f"company_timeout_seconds={COMPANY_TIMEOUT_SECONDS}"
                 fail_row["num_pages_scraped"] = 0
                 fail_row["text_length"] = 0
                 return fail_row

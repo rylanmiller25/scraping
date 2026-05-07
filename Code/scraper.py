@@ -75,9 +75,53 @@ class ScrapeResult:
         self.full_text: str = ""
         self.success: int = 0  # 0 or 1
         self.failure_reason: str = "success"
+        self.failure_detail: str = ""
         self.num_pages_scraped: int = 0
         self.urls_visited: List[str] = []
         self.text_length: int = 0
+
+
+def _classify_network_exception(exc: BaseException) -> Tuple[str, str]:
+    """
+    Attempts to classify common network/proxy errors into stable reason codes.
+    Returns (reason_code, detail_string).
+    """
+    detail = repr(exc)
+
+    if isinstance(exc, asyncio.TimeoutError):
+        return "timeout", detail
+
+    # Proxy-specific errors
+    if isinstance(exc, aiohttp.ClientHttpProxyError):
+        # Often indicates auth problems or proxy refusing connection.
+        status = getattr(exc, "status", None)
+        if status == 407:
+            return "proxy_auth_error", detail
+        return "proxy_http_error", detail
+    if isinstance(exc, aiohttp.ClientProxyConnectionError):
+        return "proxy_connect_error", detail
+
+    # TLS / cert
+    if isinstance(exc, aiohttp.ClientConnectorCertificateError):
+        return "tls_error", detail
+    if isinstance(exc, aiohttp.ClientSSLError):
+        return "tls_error", detail
+
+    # DNS / connect
+    if isinstance(exc, aiohttp.ClientConnectorError):
+        return "connect_error", detail
+
+    # HTTP-level
+    if isinstance(exc, aiohttp.ClientResponseError):
+        return "http_error", detail
+
+    if isinstance(exc, aiohttp.InvalidURL):
+        return "invalid_url", detail
+
+    if isinstance(exc, OSError):
+        return "os_error", detail
+
+    return "other_error", detail
 
 
 async def check_robots_txt(
@@ -109,10 +153,12 @@ async def check_robots_txt(
                 else:
                     # 404 or other implies allowed
                     return True, None
-    except Exception:
+    except Exception as e:
         # Network error on robots.txt usually means we can't reach it,
         # but the main scrape might also fail.
         # We'll assume allowed for now and let the main scraper hit the error if the site is truly down.
+        reason, detail = _classify_network_exception(e)
+        logger.info(f"robots.txt check error for {robots_url}: {reason} {detail}")
         return True, None
 
 
@@ -180,8 +226,12 @@ async def process_company(company_row: Dict[str, Any]) -> Dict[str, Any]:
                     ) as resp:
                         pass  # any response means we might get content
             except (asyncio.TimeoutError, aiohttp.ClientError, OSError) as e:
-                logger.warning(f"Pre-check failed for {target_urls[0]}: {e}. Skipping Playwright.")
-                result.failure_reason = "timeout"
+                reason, detail = _classify_network_exception(e)
+                logger.warning(
+                    f"Pre-check failed for {target_urls[0]}: {reason} {detail}. Skipping Playwright."
+                )
+                result.failure_reason = reason
+                result.failure_detail = detail
                 result.success = 0
                 return _compile_result(company_row, result)
 
@@ -383,8 +433,10 @@ async def process_company(company_row: Dict[str, Any]) -> Dict[str, Any]:
                     err_str = str(e).lower()
                     if "ssl" in err_str or "certificate" in err_str:
                         result.failure_reason = "tls_error"
+                        result.failure_detail = repr(e)
                     else:
                         result.failure_reason = "http_error"  # generic fallback
+                        result.failure_detail = repr(e)
 
         # --- Finalize Result ---
 
@@ -407,6 +459,7 @@ async def process_company(company_row: Dict[str, Any]) -> Dict[str, Any]:
         logger.error(f"Unhandled error while processing company {company_id}: {e}")
         result.success = 0
         result.failure_reason = "unhandled_exception"
+        result.failure_detail = repr(e)
         result.full_text = ""
         result.text_length = 0
         return _compile_result(company_row, result)
@@ -465,6 +518,7 @@ def _compile_result(company_row: Dict, result: ScrapeResult) -> Dict:
     row["text"] = result.full_text if result.success else None
     row["failure"] = 0 if result.success else 1
     row["failure_reason"] = result.failure_reason
+    row["failure_detail"] = result.failure_detail
     row["num_pages_scraped"] = result.num_pages_scraped
     row["text_length"] = result.text_length
     # 'similarity_score' and 'has_change' will be calculated in main.py
