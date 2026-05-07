@@ -129,7 +129,13 @@ async def process_company(company_row: Dict[str, Any]) -> Dict[str, Any]:
                 return _compile_result(company_row, result)
 
         # 3. Configuration and browser launch (only if pre-checks passed)
-        run_config = CrawlerRunConfig(verbose=False, cache_mode=CacheMode.BYPASS)
+        # Use Crawl4AI's built-in navigation timeout in addition to our asyncio-level timeout.
+        run_config = CrawlerRunConfig(
+            verbose=False,
+            cache_mode=CacheMode.BYPASS,
+            page_timeout=30000,  # ms
+            wait_until="domcontentloaded",
+        )
         # Crawl4AI's BrowserConfig does not expose launch timeout; Playwright default (180s) is used.
         browser_config = BrowserConfig(
             user_agent=user_agent,
@@ -167,6 +173,8 @@ async def process_company(company_row: Dict[str, Any]) -> Dict[str, Any]:
                                 logger.warning(
                                     f"Failed to scrape {url} (Attempt {attempt + 1})"
                                 )
+                        except asyncio.CancelledError:
+                            raise
                         except asyncio.TimeoutError:
                             logger.warning(
                                 f"Timeout scraping {url} (Attempt {attempt + 1}) after 30 seconds."
@@ -263,6 +271,8 @@ async def process_company(company_row: Dict[str, Any]) -> Dict[str, Any]:
                                             logger.warning(
                                                 f"Failed subpage {link} (Attempt {attempt + 1})"
                                             )
+                                    except asyncio.CancelledError:
+                                        raise
                                     except asyncio.TimeoutError:
                                         logger.warning(
                                             f"Timeout scraping subpage {link} (Attempt {attempt + 1}) after 30 seconds."
@@ -291,6 +301,8 @@ async def process_company(company_row: Dict[str, Any]) -> Dict[str, Any]:
                                         f"Failed to scrape subpage {link} for {company_id}"
                                     )
 
+                            except asyncio.CancelledError:
+                                raise
                             except Exception as e:
                                 logger.warning(
                                     f"Error scraping subpage {link} for {company_id}: {e}"
@@ -301,6 +313,8 @@ async def process_company(company_row: Dict[str, Any]) -> Dict[str, Any]:
                         result.failure_reason = "success"
                         break  # Stop trying other prefixes
 
+                except asyncio.CancelledError:
+                    raise
                 except asyncio.TimeoutError:
                     result.failure_reason = "timeout"
                 except aiohttp.ClientConnectorError:
@@ -325,6 +339,9 @@ async def process_company(company_row: Dict[str, Any]) -> Dict[str, Any]:
         result.text_length = len(result.full_text)
 
         return _compile_result(company_row, result)
+    except asyncio.CancelledError:
+        # Allow upstream timeouts/cancellation to interrupt promptly.
+        raise
     except Exception as e:
         # Any unexpected error in the scraping flow gets logged with file and line info.
         log_error(e, __file__)

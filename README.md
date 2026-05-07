@@ -45,6 +45,19 @@ To run the scraper for the current month:
     python main.py
     ```
 
+## GitHub Actions (Monthly Automation)
+
+This repo includes a scheduled workflow that runs the **scraper only** (`Code/scrape_month.py`) on the **1st of every month** (GitHub schedules run in UTC).
+
+- **Input file requirement**: the workflow expects `Input Data/pb_MM_YYYY.parquet` to be present in the repository at run time.
+- **Outputs**: the workflow commits the monthly raw scrape output to `Output Data/Raw Text Datasets/` (as `raw_MM_YYYY.parquet`).
+
+### What you need to do in GitHub
+
+1. Ensure the workflow exists on your default branch: `.github/workflows/monthly_scrape.yml`.
+2. The night before the 1st, add the month’s input file at `Input Data/pb_MM_YYYY.parquet` and push to the branch where the workflow runs (typically `main`).
+3. (Optional) You can also run it manually from GitHub Actions via **workflow_dispatch**.
+
 ## Tracking Errors
 
 -   Before processing, all variable names are normalized by lowercase such that there should not be any discrepancies in naming conventions.

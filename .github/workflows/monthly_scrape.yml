@@ -1,0 +1,107 @@
+name: Monthly scrape (scraper only)
+
+on:
+  schedule:
+    # Runs on the 1st of every month.
+    # GitHub schedules are UTC; 04:15 UTC is 00:15 Eastern during EDT (summer).
+    - cron: "15 4 1 * *"
+  workflow_dispatch:
+    inputs:
+      year:
+        description: "Override year (e.g. 2026). Defaults to current year (UTC)."
+        required: false
+        type: string
+      month:
+        description: "Override month 01-12. Defaults to current month (UTC)."
+        required: false
+        type: string
+
+permissions:
+  contents: write
+
+concurrency:
+  group: monthly-scrape
+  cancel-in-progress: false
+
+jobs:
+  scrape:
+    runs-on: ubuntu-latest
+    timeout-minutes: 360
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Set up Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: "3.11"
+
+      - name: Install Python dependencies
+        working-directory: Code
+        run: |
+          python -m pip install --upgrade pip
+          pip install -r requirements.txt
+
+      - name: Install Playwright browsers
+        working-directory: Code
+        run: |
+          python -m playwright install --with-deps chromium
+
+      - name: Run scraper for this month
+        working-directory: Code
+        env:
+          SCRAPE_YEAR: ${{ inputs.year }}
+          SCRAPE_MONTH: ${{ inputs.month }}
+        run: |
+          python scrape_month.py
+
+      - name: Commit raw output to repo
+        # Only commit if the scraper produced a raw parquet for this month.
+        working-directory: .
+        env:
+          SCRAPE_YEAR: ${{ inputs.year }}
+          SCRAPE_MONTH: ${{ inputs.month }}
+        run: |
+          python - <<'PY'
+          import os, datetime, glob, sys
+          y = os.getenv("SCRAPE_YEAR")
+          m = os.getenv("SCRAPE_MONTH")
+          now = datetime.datetime.utcnow()
+          year = int(y) if y else now.year
+          month = int(m) if m else now.month
+          expected = f"Output Data/Raw Text Datasets/raw_{month:02d}_{year}.parquet"
+          matches = glob.glob(expected)
+          if not matches:
+            print(f"No raw output found at {expected}; nothing to commit.")
+            sys.exit(0)
+          print(f"Found raw output: {expected}")
+          PY
+
+          git status --porcelain
+          git config user.name "github-actions[bot]"
+          git config user.email "github-actions[bot]@users.noreply.github.com"
+
+          # Add only the expected raw output parquet (avoid committing anything else).
+          python - <<'PY'
+          import os, datetime
+          y = os.getenv("SCRAPE_YEAR")
+          m = os.getenv("SCRAPE_MONTH")
+          now = datetime.datetime.utcnow()
+          year = int(y) if y else now.year
+          month = int(m) if m else now.month
+          print(f"Output Data/Raw Text Datasets/raw_{month:02d}_{year}.parquet")
+          PY > _raw_path.txt
+
+          RAW_PATH="$(cat _raw_path.txt)"
+          rm -f _raw_path.txt
+          git add "$RAW_PATH"
+
+          # If nothing changed (same file already committed), exit cleanly.
+          if git diff --cached --quiet; then
+            echo "No changes to commit."
+            exit 0
+          fi
+
+          git commit -m "Add monthly raw scrape output"
+          git push
+

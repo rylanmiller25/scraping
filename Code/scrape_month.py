@@ -116,9 +116,17 @@ async def run_scrape(year: int, month: int) -> None:
 
 
 async def main() -> None:
+    # Default to current time (in GitHub Actions this is typically UTC).
     now = datetime.datetime.now()
-    logger.info(f"Starting scrape job for {now.year}-{now.month:02d}")
-    await run_scrape(now.year, now.month)
+
+    # Optional overrides for CI/manual runs (e.g. GitHub Actions workflow_dispatch).
+    env_year = os.getenv("SCRAPE_YEAR")
+    env_month = os.getenv("SCRAPE_MONTH")
+    year = int(env_year) if env_year else now.year
+    month = int(env_month) if env_month else now.month
+
+    logger.info(f"Starting scrape job for {year}-{month:02d}")
+    await run_scrape(year, month)
 
 
 if __name__ == "__main__":

@@ -2,6 +2,12 @@
 *.parquet
 *.dta
 
+# Allow monthly input parquet files to be committed if desired
+!Input Data/pb_*.parquet
+
+# Allow scraper raw outputs to be committed
+!Output Data/Raw Text Datasets/raw_*.parquet
+
 # Ignore Logs
 *.log
 
