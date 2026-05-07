@@ -1,6 +1,7 @@
 import asyncio
 import random
 import logging
+import os
 import aiohttp
 from urllib.robotparser import RobotFileParser
 from typing import Dict, Any, List, Optional, Tuple
@@ -21,6 +22,52 @@ from utils import (
 )
 
 logger = logging.getLogger("startup_scraper")
+
+def _brightdata_proxy_url() -> str:
+    """
+    Builds an authenticated proxy URL from environment variables (GitHub secrets).
+
+    Expected env vars:
+      - BRIGHTDATA_RES_PROXY_HOST
+      - BRIGHTDATA_RES_PROXY_PORT
+      - BRIGHTDATA_RES_PROXY_USERNAME
+      - BRIGHTDATA_RES_PROXY_PASSWORD
+    """
+    host = os.getenv("BRIGHTDATA_RES_PROXY_HOST", "").strip()
+    port = os.getenv("BRIGHTDATA_RES_PROXY_PORT", "").strip()
+    username = os.getenv("BRIGHTDATA_RES_PROXY_USERNAME", "").strip()
+    password = os.getenv("BRIGHTDATA_RES_PROXY_PASSWORD", "").strip()
+
+    if not (host and port and username and password):
+        return ""
+
+    # Bright Data proxies are typically HTTP proxies, even for HTTPS targets.
+    return f"http://{username}:{password}@{host}:{port}"
+
+
+def _crawl4ai_proxy_config() -> object:
+    """
+    Returns a Crawl4AI-compatible proxy_config value.
+
+    Crawl4AI supports:
+      - a ProxyConfig instance (newer versions), or
+      - a dict with {server, username, password}, or
+      - a string URL.
+    We avoid importing ProxyConfig directly to stay compatible with different versions.
+    """
+    proxy_url = _brightdata_proxy_url()
+    if not proxy_url:
+        return None
+
+    # Prefer dict format (works across documented versions).
+    # server should include scheme and host:port.
+    # Note: we pass credentials separately even though they are also embedded in proxy_url.
+    host = os.getenv("BRIGHTDATA_RES_PROXY_HOST", "").strip()
+    port = os.getenv("BRIGHTDATA_RES_PROXY_PORT", "").strip()
+    username = os.getenv("BRIGHTDATA_RES_PROXY_USERNAME", "").strip()
+    password = os.getenv("BRIGHTDATA_RES_PROXY_PASSWORD", "").strip()
+    server = f"http://{host}:{port}"
+    return {"server": server, "username": username, "password": password}
 
 
 class ScrapeResult:
@@ -43,10 +90,15 @@ async def check_robots_txt(
     """
     robots_url = urljoin(base_url, "/robots.txt")
     parser = RobotFileParser()
+    proxy_url = _brightdata_proxy_url()
 
     try:
         async with aiohttp.ClientSession() as session:
-            async with session.get(robots_url, timeout=10) as response:
+            async with session.get(
+                robots_url,
+                timeout=10,
+                proxy=proxy_url or None,
+            ) as response:
                 if response.status == 200:
                     content = await response.text()
                     parser.parse(content.splitlines())
@@ -101,6 +153,7 @@ async def process_company(company_row: Dict[str, Any]) -> Dict[str, Any]:
 
     result = ScrapeResult()
     user_agent = "Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36"
+    proxy_url = _brightdata_proxy_url()
 
     try:
         # 1. URL Normalization
@@ -120,7 +173,11 @@ async def process_company(company_row: Dict[str, Any]) -> Dict[str, Any]:
         if target_urls:
             try:
                 async with aiohttp.ClientSession() as session:
-                    async with session.get(target_urls[0], timeout=aiohttp.ClientTimeout(total=10)) as resp:
+                    async with session.get(
+                        target_urls[0],
+                        timeout=aiohttp.ClientTimeout(total=10),
+                        proxy=proxy_url or None,
+                    ) as resp:
                         pass  # any response means we might get content
             except (asyncio.TimeoutError, aiohttp.ClientError, OSError) as e:
                 logger.warning(f"Pre-check failed for {target_urls[0]}: {e}. Skipping Playwright.")
@@ -130,11 +187,13 @@ async def process_company(company_row: Dict[str, Any]) -> Dict[str, Any]:
 
         # 3. Configuration and browser launch (only if pre-checks passed)
         # Use Crawl4AI's built-in navigation timeout in addition to our asyncio-level timeout.
+        proxy_config = _crawl4ai_proxy_config()
         run_config = CrawlerRunConfig(
             verbose=False,
             cache_mode=CacheMode.BYPASS,
             page_timeout=30000,  # ms
             wait_until="domcontentloaded",
+            proxy_config=proxy_config,
         )
         # Crawl4AI's BrowserConfig does not expose launch timeout; Playwright default (180s) is used.
         browser_config = BrowserConfig(

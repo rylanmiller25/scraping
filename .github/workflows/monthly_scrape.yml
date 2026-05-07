@@ -52,6 +52,10 @@ jobs:
         env:
           SCRAPE_YEAR: ${{ inputs.year }}
           SCRAPE_MONTH: ${{ inputs.month }}
+          BRIGHTDATA_RES_PROXY_HOST: ${{ secrets.BRIGHTDATA_RES_PROXY_HOST }}
+          BRIGHTDATA_RES_PROXY_PORT: ${{ secrets.BRIGHTDATA_RES_PROXY_PORT }}
+          BRIGHTDATA_RES_PROXY_USERNAME: ${{ secrets.BRIGHTDATA_RES_PROXY_USERNAME }}
+          BRIGHTDATA_RES_PROXY_PASSWORD: ${{ secrets.BRIGHTDATA_RES_PROXY_PASSWORD }}
         run: |
           python scrape_month.py
 
